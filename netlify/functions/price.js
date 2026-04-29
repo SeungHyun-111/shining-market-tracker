@@ -1,117 +1,92 @@
-function stripHtml(text = "") {
-  return text.replace(/<[^>]*>/g, "").replace(/&quot;/g, '"').trim();
-}
+import { load } from "cheerio";
 
 function toNumber(value) {
-  const number = Number(String(value || "").replace(/[^0-9]/g, ""));
-  return Number.isFinite(number) ? number : 0;
+  return Number(String(value || "").replace(/[^0-9]/g, "")) || 0;
 }
 
-async function fetchNaverShopping(keyword) {
-  const query = new URLSearchParams({
-    query: keyword,
-    display: "20",
-    start: "1",
-    sort: "sim",
-  });
-
-  const url = `https://openapi.naver.com/v1/search/shop.json?${query.toString()}`;
+async function fetchHtml(keyword) {
+  const url = `https://search.shopping.naver.com/search/all?query=${encodeURIComponent(
+    keyword
+  )}`;
 
   const res = await fetch(url, {
-    method: "GET",
     headers: {
-      "X-Naver-Client-Id": process.env.NAVER_CLIENT_ID,
-      "X-Naver-Client-Secret": process.env.NAVER_CLIENT_SECRET,
+      "User-Agent":
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36",
     },
   });
 
   if (!res.ok) {
-    const errorText = await res.text();
-    throw new Error(`NAVER SHOPPING API 실패 ${res.status}: ${errorText}`);
+    throw new Error(`크롤링 실패 ${res.status}`);
   }
 
-  return res.json();
+  return res.text();
 }
 
-function convertItems(naverData) {
-  return (naverData.items || []).map((item) => ({
-    title: stripHtml(item.title),
-    link: item.link,
-    image: item.image,
-    mall: item.mallName,
-    price: toNumber(item.lprice),
-    highPrice: toNumber(item.hprice),
-    brand: item.brand,
-    maker: item.maker,
-    category1: item.category1,
-    category2: item.category2,
-    category3: item.category3,
-    category4: item.category4,
-    productId: item.productId,
-    productType: item.productType,
-    delivery: "확인필요",
-    review: null,
-  }));
+function parseItems(html) {
+  const $ = load(html);
+  const items = [];
+
+  $("div.product_item__MDtDF").each((i, el) => {
+    const title = $(el).find("a.product_link__TrAac").text().trim();
+    const priceText = $(el)
+      .find("span.price_num__S2p_v")
+      .first()
+      .text();
+
+    const price = toNumber(priceText);
+
+    if (title && price) {
+      items.push({
+        title,
+        price,
+      });
+    }
+  });
+
+  return items;
 }
 
 function makeSummary(items) {
-  const prices = items.map((item) => item.price).filter((price) => price > 0);
+  const prices = items.map((i) => i.price);
 
   if (!prices.length) {
-    return {
-      minPrice: 0,
-      maxPrice: 0,
-      avgPrice: 0,
-      count: 0,
-    };
+    return { minPrice: 0, maxPrice: 0, avgPrice: 0 };
   }
 
-  const minPrice = Math.min(...prices);
-  const maxPrice = Math.max(...prices);
-  const avgPrice = Math.round(
-    prices.reduce((sum, price) => sum + price, 0) / prices.length
-  );
-
   return {
-    minPrice,
-    maxPrice,
-    avgPrice,
-    count: prices.length,
+    minPrice: Math.min(...prices),
+    maxPrice: Math.max(...prices),
+    avgPrice: Math.round(
+      prices.reduce((a, b) => a + b, 0) / prices.length
+    ),
   };
 }
 
 export async function handler(event) {
   const keyword = event.queryStringParameters?.keyword || "복숭아";
 
-  let source = "naver-shopping";
-  let errorMessage = null;
   let items = [];
+  let errorMessage = null;
 
   try {
-    const naverData = await fetchNaverShopping(keyword);
-    items = convertItems(naverData);
+    const html = await fetchHtml(keyword);
+    items = parseItems(html);
   } catch (e) {
-    source = "error";
     errorMessage = e.message;
-    items = [];
   }
 
-  return {
-    statusCode: 200,
-    headers: {
-      "Content-Type": "application/json; charset=utf-8",
-    },
-    body: JSON.stringify({
-      ok: source !== "error",
-      source,
-      keyword,
-      errorMessage,
-      env: {
-        clientIdExists: !!process.env.NAVER_CLIENT_ID,
-        clientSecretExists: !!process.env.NAVER_CLIENT_SECRET,
-      },
-      summary: makeSummary(items),
-      items,
-    }),
-  };
+return {
+  statusCode: 200,
+  headers: {
+    "Content-Type": "application/json; charset=utf-8",
+  },
+  body: JSON.stringify({
+    ok: !errorMessage,
+    keyword,
+    errorMessage,
+    items,
+    summary: makeSummary(items),
+  }),
+};
 }
