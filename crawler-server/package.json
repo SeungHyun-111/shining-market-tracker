@@ -4,12 +4,11 @@
   "type": "module",
   "main": "server.js",
   "scripts": {
-    "postinstall": "npx playwright install chromium",
     "start": "node server.js"
   },
   "dependencies": {
     "cors": "^2.8.6",
     "express": "^5.2.1",
-    "playwright": "^1.59.1"
+    "puppeteer": "^24.32.0"
   }
 }
