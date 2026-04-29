@@ -55,8 +55,11 @@ function App() {
       />
 
       <PriceSection
+        priceItems={priceItems}
+        priceSummary={priceSummary}
         selectedKeyword={selectedKeyword}
-        items={priceItems}
+        priceLoading={priceLoading}
+        priceError={priceError}
       />
     </DashboardLayout>
   );

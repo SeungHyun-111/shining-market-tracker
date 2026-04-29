@@ -10,11 +10,19 @@ export function useTrendStore() {
   const [top20Data, setTop20Data] = useState([]);
   const [trendMap, setTrendMap] = useState({});
   const [priceItems, setPriceItems] = useState([]);
+  const [priceSummary, setPriceSummary] = useState({
+    minPrice: 0,
+    maxPrice: 0,
+    avgPrice: 0,
+    count: 0,
+  });
 
   const [loading, setLoading] = useState(false);
+  const [priceLoading, setPriceLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [priceError, setPriceError] = useState(null);
 
-  const year = 2025;
+  const year = new Date().getFullYear();
 
   useEffect(() => {
     async function loadTrend() {
@@ -48,8 +56,33 @@ export function useTrendStore() {
 
   useEffect(() => {
     async function loadPrice() {
-      const data = await fetchPriceData(selectedKeyword);
-      setPriceItems(data.items || []);
+      try {
+        setPriceLoading(true);
+        setPriceError(null);
+
+        const data = await fetchPriceData(selectedKeyword);
+
+        setPriceItems(data.items || []);
+        setPriceSummary(
+          data.summary || {
+            minPrice: 0,
+            maxPrice: 0,
+            avgPrice: 0,
+            count: 0,
+          }
+        );
+      } catch (e) {
+        setPriceError(e.message);
+        setPriceItems([]);
+        setPriceSummary({
+          minPrice: 0,
+          maxPrice: 0,
+          avgPrice: 0,
+          count: 0,
+        });
+      } finally {
+        setPriceLoading(false);
+      }
     }
 
     if (selectedKeyword) {
@@ -78,7 +111,10 @@ export function useTrendStore() {
     filteredTop20,
     trendData,
     priceItems,
+    priceSummary,
     loading,
+    priceLoading,
     error,
+    priceError,
   };
 }

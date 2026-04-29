@@ -10,12 +10,26 @@ function formatDate(date) {
   return `${yyyy}-${mm}-${dd}`;
 }
 
-async function fetchNaverTrend(keywords) {
+function getDateRange(year) {
+  const today = new Date();
+  const currentYear = today.getFullYear();
+
+  const startDate = `${year - 1}-01-01`;
+  const endDate =
+    year === currentYear
+      ? formatDate(today)
+      : `${year}-12-31`;
+
+  return { startDate, endDate };
+}
+
+async function fetchNaverTrend(keywords, year) {
   const url = "https://openapi.naver.com/v1/datalab/search";
+  const { startDate, endDate } = getDateRange(year);
 
   const body = {
-    startDate: "2025-01-01",
-    endDate: "2025-12-31",
+    startDate,
+    endDate,
     timeUnit: "date",
     keywordGroups: keywords.map((k) => ({
       groupName: k,
@@ -35,23 +49,38 @@ async function fetchNaverTrend(keywords) {
 
   if (!res.ok) {
     const errorText = await res.text();
-    throw new Error(`NAVER API 실패 ${res.status}: ${errorText}`);
+    throw new Error(`NAVER TREND API 실패 ${res.status}: ${errorText}`);
   }
 
   return res.json();
 }
 
-function convertToRaw(naverData) {
+function convertToRaw(naverData, year) {
   const result = [];
 
   naverData.results.forEach((group) => {
+    const lastYearMap = new Map();
+
     group.data.forEach((row) => {
+      const d = new Date(`${row.period}T00:00:00`);
+      if (d.getFullYear() === year - 1) {
+        const key = row.period.slice(5);
+        lastYearMap.set(key, Number(row.ratio || 0));
+      }
+    });
+
+    group.data.forEach((row) => {
+      const d = new Date(`${row.period}T00:00:00`);
+      if (d.getFullYear() !== year) return;
+
+      const key = row.period.slice(5);
+
       result.push({
         keyword: group.title,
         category: "과일",
         date: row.period,
-        value: row.ratio,
-        lastYearValue: row.ratio * 0.8,
+        value: Number(row.ratio || 0),
+        lastYearValue: lastYearMap.get(key) || 0,
         change: 0,
       });
     });
@@ -60,42 +89,21 @@ function convertToRaw(naverData) {
   return result;
 }
 
-function makeDummy(year) {
-  const result = [];
-  const start = new Date(year, 0, 1);
-
-  for (let i = 0; i < 365; i++) {
-    const d = new Date(start);
-    d.setDate(start.getDate() + i);
-
-    result.push({
-      keyword: "복숭아",
-      category: "과일",
-      date: formatDate(d),
-      value: Math.random() * 100,
-      lastYearValue: Math.random() * 80,
-      change: 0,
-    });
-  }
-
-  return result;
-}
-
 export async function handler(event) {
-  const year = Number(event.queryStringParameters?.year || 2025);
+  const today = new Date();
+  const year = Number(event.queryStringParameters?.year || today.getFullYear());
 
-  let rawData;
+  let rawData = [];
   let source = "naver";
   let errorMessage = null;
 
   try {
     const keywords = ["복숭아", "사과", "수박"];
-    const naverData = await fetchNaverTrend(keywords);
-    rawData = convertToRaw(naverData);
+    const naverData = await fetchNaverTrend(keywords, year);
+    rawData = convertToRaw(naverData, year);
   } catch (e) {
-    source = "dummy";
+    source = "error";
     errorMessage = e.message;
-    rawData = makeDummy(year);
   }
 
   const top20Data = makeTop20(rawData);
@@ -107,14 +115,10 @@ export async function handler(event) {
       "Content-Type": "application/json; charset=utf-8",
     },
     body: JSON.stringify({
-      ok: true,
+      ok: !errorMessage,
       source,
       year,
       errorMessage,
-      env: {
-        clientIdExists: !!process.env.NAVER_CLIENT_ID,
-        clientSecretExists: !!process.env.NAVER_CLIENT_SECRET,
-      },
       top20Data,
       trendMap,
     }),
