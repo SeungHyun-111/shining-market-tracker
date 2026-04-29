@@ -9,6 +9,7 @@ import {
   CartesianGrid,
   Legend,
 } from "recharts";
+import { getWeekLabel } from "../utils/dateUtils.js";
 
 function parseDate(value) {
   const [y, m, d] = value.split("-").map(Number);
@@ -21,8 +22,7 @@ function formatDate(value, mode = "day") {
   if (mode === "month") return `${d.getMonth() + 1}월`;
 
   if (mode === "week") {
-    const week = Math.ceil(d.getDate() / 7);
-    return `${d.getMonth() + 1}월 ${week}주`;
+    return getWeekLabel(value);
   }
 
   return `${d.getMonth() + 1}/${d.getDate()}`;

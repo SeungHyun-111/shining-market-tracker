@@ -87,31 +87,36 @@ async function fetchNaverTrend(keywordItems, year) {
   return { results };
 }
 
-function convertToRaw(naverData, keywordItems, year) {
-  const categoryMap = new Map(keywordItems.map((item) => [item.keyword, item.category]));
-  const result = [];
+function convertToRaw(naverData, keywordItems) {
+  const categoryMap = new Map(
+    keywordItems.map((item) => [item.keyword, item.category])
+  );
+
+  const rawData = [];
 
   (naverData.results || []).forEach((group) => {
     (group.data || []).forEach((row) => {
       const d = new Date(`${row.period}T00:00:00`);
 
-      if (d.getFullYear() !== year) return;
-
-      result.push({
+      rawData.push({
         keyword: group.title,
         category: categoryMap.get(group.title) || "-",
+        parentCategory: "-",
         date: row.period,
+        year: d.getFullYear(),
+        month: d.getMonth() + 1,
         value: Number(row.ratio || 0),
-        lastYearValue: 0,
       });
     });
   });
 
-  return result;
+  return rawData;
 }
 
 export async function handler(event) {
-  const year = Number(event.queryStringParameters?.year || new Date().getFullYear());
+  const year = Number(
+    event.queryStringParameters?.year || new Date().getFullYear()
+  );
   const category = event.queryStringParameters?.category || "all";
   const period = event.queryStringParameters?.period || "7";
   const debug = event.queryStringParameters?.debug;
@@ -141,7 +146,7 @@ export async function handler(event) {
     const trendTargets = filtered.slice(0, MAX_TREND_KEYWORDS);
 
     const naverData = await fetchNaverTrend(trendTargets, year);
-    const rawData = convertToRaw(naverData, trendTargets, year);
+    const rawData = convertToRaw(naverData, trendTargets);
 
     return json(200, {
       ok: true,

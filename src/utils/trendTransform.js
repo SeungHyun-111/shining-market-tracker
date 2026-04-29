@@ -1,3 +1,5 @@
+import { getWeekLabel } from "./dateUtils.js";
+
 function toNumber(value) {
   const num = Number(value);
   return Number.isFinite(num) ? num : 0;
@@ -31,44 +33,115 @@ function slope(rows) {
   return last - first;
 }
 
-function getMonthLabel(date) {
-  const [, month] = String(date).split("-");
-  return `${Number(month)}월`;
+function groupMonthlyCompare(rows, year) {
+  const result = Array.from({ length: 12 }, (_, i) => ({
+    label: `${i + 1}월`,
+    valueSum: 0,
+    valueCount: 0,
+    lastYearSum: 0,
+    lastYearCount: 0,
+  }));
+
+  rows.forEach((row) => {
+    const d = new Date(`${row.date}T00:00:00`);
+    const rowYear = Number(row.year || d.getFullYear());
+    const monthIndex = d.getMonth();
+
+    if (rowYear === year) {
+      result[monthIndex].valueSum += toNumber(row.value);
+      result[monthIndex].valueCount += 1;
+    }
+
+    if (rowYear === year - 1) {
+      result[monthIndex].lastYearSum += toNumber(row.value);
+      result[monthIndex].lastYearCount += 1;
+    }
+  });
+
+  return result.map((item) => ({
+    label: item.label,
+    value: item.valueCount ? round(item.valueSum / item.valueCount) : 0,
+    lastYear: item.lastYearCount
+      ? round(item.lastYearSum / item.lastYearCount)
+      : 0,
+  }));
 }
 
-function getWeekLabel(date) {
-  const d = new Date(`${date}T00:00:00`);
-  const month = d.getMonth() + 1;
-  const week = Math.ceil(d.getDate() / 7);
-  return `${month}월 ${week}주`;
-}
-
-function groupAverage(rows, labelGetter) {
+function groupWeeklyCompare(rows, year) {
   const map = new Map();
 
   rows.forEach((row) => {
-    const label = labelGetter(row.date);
+    const d = new Date(`${row.date}T00:00:00`);
+    const rowYear = Number(row.year || d.getFullYear());
+    const label = getWeekLabel(row.date);
 
     if (!map.has(label)) {
       map.set(label, {
         label,
         valueSum: 0,
+        valueCount: 0,
         lastYearSum: 0,
-        count: 0,
+        lastYearCount: 0,
       });
     }
 
     const item = map.get(label);
-    item.valueSum += toNumber(row.value);
-    item.lastYearSum += toNumber(row.lastYearValue);
-    item.count += 1;
+
+    if (rowYear === year) {
+      item.valueSum += toNumber(row.value);
+      item.valueCount += 1;
+    }
+
+    if (rowYear === year - 1) {
+      item.lastYearSum += toNumber(row.value);
+      item.lastYearCount += 1;
+    }
   });
 
   return Array.from(map.values()).map((item) => ({
     label: item.label,
-    value: round(item.valueSum / item.count),
-    lastYear: round(item.lastYearSum / item.count),
+    value: item.valueCount ? round(item.valueSum / item.valueCount) : 0,
+    lastYear: item.lastYearCount
+      ? round(item.lastYearSum / item.lastYearCount)
+      : 0,
   }));
+}
+
+function makeYearCompare(rows, year) {
+  const map = new Map();
+
+  rows.forEach((row) => {
+    const d = new Date(`${row.date}T00:00:00`);
+    const rowYear = Number(row.year || d.getFullYear());
+    const monthDay = row.date.slice(5);
+
+    if (!map.has(monthDay)) {
+      map.set(monthDay, {
+        monthDay,
+        value: 0,
+        lastYear: 0,
+      });
+    }
+
+    const item = map.get(monthDay);
+
+    if (rowYear === year) {
+      item.value = toNumber(row.value);
+    }
+
+    if (rowYear === year - 1) {
+      item.lastYear = toNumber(row.value);
+    }
+  });
+
+  return Array.from(map.values())
+    .sort((a, b) => a.monthDay.localeCompare(b.monthDay))
+    .map((item) => ({
+      date: `${year}-${item.monthDay}`,
+      value: round(item.value),
+      lastYear: round(item.lastYear),
+      year,
+    }));
 }
 
 export function makeTop20(rawData, period = "7") {
@@ -128,7 +201,6 @@ export function makeTrendMap(rawData, year) {
     grouped.get(row.keyword).push({
       ...row,
       value: toNumber(row.value),
-      lastYearValue: toNumber(row.lastYearValue),
     });
   });
 
@@ -140,14 +212,9 @@ export function makeTrendMap(rawData, year) {
     );
 
     result[keyword] = {
-      monthly: groupAverage(sorted, getMonthLabel),
-      weekly: groupAverage(sorted, getWeekLabel),
-      yearCompare: sorted.map((row) => ({
-        date: row.date,
-        value: round(row.value),
-        lastYear: round(row.lastYearValue),
-        year,
-      })),
+      monthly: groupMonthlyCompare(sorted, year),
+      weekly: groupWeeklyCompare(sorted, year),
+      yearCompare: makeYearCompare(sorted, year),
     };
   });
 
