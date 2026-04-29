@@ -13,14 +13,13 @@ app.get("/api/price", async (req, res) => {
   try {
     browser = await chromium.launch({
       args: ["--no-sandbox"],
+      executablePath: "/opt/render/.cache/ms-playwright/chromium/chrome-linux/chrome", // 🔥 핵심
     });
 
     const page = await browser.newPage();
 
     await page.goto(
-      `https://search.shopping.naver.com/search/all?query=${encodeURIComponent(
-        keyword
-      )}`,
+      `https://search.shopping.naver.com/search/all?query=${encodeURIComponent(keyword)}`,
       { waitUntil: "domcontentloaded" }
     );
 
