@@ -1,66 +1,84 @@
-import { load } from "cheerio";
+function stripHtml(text = "") {
+  return String(text)
+    .replace(/<[^>]*>/g, "")
+    .replace(/&quot;/g, '"')
+    .replace(/&amp;/g, "&")
+    .trim();
+}
 
 function toNumber(value) {
   return Number(String(value || "").replace(/[^0-9]/g, "")) || 0;
 }
 
-async function fetchHtml(keyword) {
-  const url = `https://search.shopping.naver.com/search/all?query=${encodeURIComponent(
-    keyword
-  )}`;
-
-  const res = await fetch(url, {
-    headers: {
-      "User-Agent":
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36",
-    },
-  });
-
-  if (!res.ok) {
-    throw new Error(`크롤링 실패 ${res.status}`);
-  }
-
-  return res.text();
-}
-
-function parseItems(html) {
-  const $ = load(html);
-  const items = [];
-
-  $("div.product_item__MDtDF").each((i, el) => {
-    const title = $(el).find("a.product_link__TrAac").text().trim();
-    const priceText = $(el)
-      .find("span.price_num__S2p_v")
-      .first()
-      .text();
-
-    const price = toNumber(priceText);
-
-    if (title && price) {
-      items.push({
-        title,
-        price,
-      });
-    }
-  });
-
-  return items;
-}
-
 function makeSummary(items) {
-  const prices = items.map((i) => i.price);
+  const prices = items.map((item) => item.price).filter((price) => price > 0);
 
   if (!prices.length) {
-    return { minPrice: 0, maxPrice: 0, avgPrice: 0 };
+    return {
+      minPrice: 0,
+      maxPrice: 0,
+      avgPrice: 0,
+      count: 0,
+    };
   }
 
   return {
     minPrice: Math.min(...prices),
     maxPrice: Math.max(...prices),
-    avgPrice: Math.round(
-      prices.reduce((a, b) => a + b, 0) / prices.length
-    ),
+    avgPrice: Math.round(prices.reduce((sum, price) => sum + price, 0) / prices.length),
+    count: prices.length,
   };
+}
+
+async function fetchNaverShopping(keyword) {
+  const query = new URLSearchParams({
+    query: keyword,
+    display: "30",
+    start: "1",
+    sort: "asc",
+    exclude: "used:rental:cbshop",
+  });
+
+  const url = `https://openapi.naver.com/v1/search/shop.json?${query.toString()}`;
+
+  const res = await fetch(url, {
+    method: "GET",
+    headers: {
+      "X-Naver-Client-Id": process.env.NAVER_CLIENT_ID,
+      "X-Naver-Client-Secret": process.env.NAVER_CLIENT_SECRET,
+    },
+  });
+
+  if (!res.ok) {
+    const errorText = await res.text();
+    throw new Error(`NAVER SHOP API 실패 ${res.status}: ${errorText}`);
+  }
+
+  return res.json();
+}
+
+function convertItems(data) {
+  return (data.items || []).map((item) => {
+    const lprice = toNumber(item.lprice);
+    const hprice = toNumber(item.hprice);
+
+    return {
+      title: stripHtml(item.title),
+      link: item.link,
+      image: item.image,
+      mall: item.mallName,
+      price: lprice,
+      highPrice: hprice,
+      brand: item.brand || "",
+      maker: item.maker || "",
+      category1: item.category1 || "",
+      category2: item.category2 || "",
+      category3: item.category3 || "",
+      category4: item.category4 || "",
+      productId: item.productId,
+      productType: item.productType,
+    };
+  });
 }
 
 export async function handler(event) {
@@ -70,23 +88,24 @@ export async function handler(event) {
   let errorMessage = null;
 
   try {
-    const html = await fetchHtml(keyword);
-    items = parseItems(html);
+    const data = await fetchNaverShopping(keyword);
+    items = convertItems(data);
   } catch (e) {
     errorMessage = e.message;
   }
 
-return {
-  statusCode: 200,
-  headers: {
-    "Content-Type": "application/json; charset=utf-8",
-  },
-  body: JSON.stringify({
-    ok: !errorMessage,
-    keyword,
-    errorMessage,
-    items,
-    summary: makeSummary(items),
-  }),
-};
+  return {
+    statusCode: 200,
+    headers: {
+      "Content-Type": "application/json; charset=utf-8",
+    },
+    body: JSON.stringify({
+      ok: !errorMessage,
+      source: "naver-shopping-search",
+      keyword,
+      errorMessage,
+      summary: makeSummary(items),
+      items,
+    }),
+  };
 }
