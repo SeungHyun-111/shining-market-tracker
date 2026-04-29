@@ -841,3 +841,29 @@ dd {
     flex-direction: column;
   }
 }
+
+.section-desc {
+  margin: 4px 0 0;
+  color: #777;
+  font-size: 13px;
+}
+
+.formula-box {
+  margin-top: 12px;
+  padding: 10px;
+  border-radius: 12px;
+  background: #f6f7f8;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.formula-box b {
+  display: block;
+  margin-bottom: 4px;
+  color: #222;
+}
+
+.formula-box span {
+  display: block;
+  color: #555;
+}

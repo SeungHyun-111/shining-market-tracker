@@ -1,122 +1,155 @@
-import { getMonthLabel, isSameYear } from "./dateUtils";
-
-function average(numbers) {
-  const valid = numbers.filter((v) => Number.isFinite(Number(v)));
-  if (!valid.length) return 0;
-
-  const sum = valid.reduce((acc, value) => acc + Number(value || 0), 0);
-  return Number((sum / valid.length).toFixed(2));
+function toNumber(value) {
+  const num = Number(value);
+  return Number.isFinite(num) ? num : 0;
 }
 
-function groupBy(data, keyGetter) {
-  return data.reduce((acc, item) => {
-    const key = keyGetter(item);
-    if (!acc[key]) acc[key] = [];
-    acc[key].push(item);
-    return acc;
-  }, {});
+function round(value, digits = 2) {
+  return Number(toNumber(value).toFixed(digits));
 }
 
-function getWeekKey(dateStr) {
-  const d = new Date(`${dateStr}T00:00:00`);
-  const year = d.getFullYear();
+function getRecentRows(rows, days) {
+  return [...rows]
+    .sort((a, b) => String(b.date).localeCompare(String(a.date)))
+    .slice(0, days);
+}
+
+function average(rows, key = "value") {
+  if (!rows.length) return 0;
+  return rows.reduce((sum, row) => sum + toNumber(row[key]), 0) / rows.length;
+}
+
+function slope(rows) {
+  if (rows.length < 2) return 0;
+
+  const sorted = [...rows].sort((a, b) =>
+    String(a.date).localeCompare(String(b.date))
+  );
+
+  const first = toNumber(sorted[0].value);
+  const last = toNumber(sorted[sorted.length - 1].value);
+
+  return last - first;
+}
+
+function getMonthLabel(date) {
+  const [, month] = String(date).split("-");
+  return `${Number(month)}월`;
+}
+
+function getWeekLabel(date) {
+  const d = new Date(`${date}T00:00:00`);
   const month = d.getMonth() + 1;
-
-  const firstDay = new Date(year, d.getMonth(), 1);
-  const dayOfWeek = firstDay.getDay() || 7;
-  const offset = d.getDate() + dayOfWeek - 1;
-  const week = Math.ceil(offset / 7);
-
-  return `${year}-${String(month).padStart(2, "0")}-${week}주차`;
+  const week = Math.ceil(d.getDate() / 7);
+  return `${month}월 ${week}주`;
 }
 
-function makeWeeklyTrend(rawData, year) {
-  const yearData = rawData.filter((item) => isSameYear(item.date, year));
-  const grouped = groupBy(yearData, (item) => getWeekKey(item.date));
+function groupAverage(rows, labelGetter) {
+  const map = new Map();
 
-  return Object.entries(grouped)
-    .map(([label, rows]) => ({
-      label,
-      value: average(rows.map((item) => item.value)),
-      lastYear: average(rows.map((item) => item.lastYearValue)),
-    }))
-    .sort((a, b) => a.label.localeCompare(b.label));
-}
+  rows.forEach((row) => {
+    const label = labelGetter(row.date);
 
-export function makeMonthlyTrend(rawData, year) {
-  const yearData = rawData.filter((item) => isSameYear(item.date, year));
-  const grouped = groupBy(yearData, (item) => getMonthLabel(item.date));
+    if (!map.has(label)) {
+      map.set(label, {
+        label,
+        valueSum: 0,
+        lastYearSum: 0,
+        count: 0,
+      });
+    }
 
-  return Array.from({ length: 12 }).map((_, index) => {
-    const label = `${index + 1}월`;
-    const rows = grouped[label] || [];
-
-    return {
-      label,
-      value: average(rows.map((item) => item.value)),
-      lastYear: average(rows.map((item) => item.lastYearValue)),
-    };
+    const item = map.get(label);
+    item.valueSum += toNumber(row.value);
+    item.lastYearSum += toNumber(row.lastYearValue);
+    item.count += 1;
   });
+
+  return Array.from(map.values()).map((item) => ({
+    label: item.label,
+    value: round(item.valueSum / item.count),
+    lastYear: round(item.lastYearSum / item.count),
+  }));
 }
 
-export function makeYearCompare(rawData, year) {
-  const yearData = rawData.filter((item) => isSameYear(item.date, year));
-  const dataMap = new Map(yearData.map((item) => [item.date, item]));
+export function makeTop20(rawData, period = "7") {
+  const selectedDays = Number(period || 7);
+  const grouped = new Map();
 
-  const result = [];
-  const start = new Date(year, 0, 1);
-  const end = new Date(year, 11, 31);
+  rawData.forEach((row) => {
+    if (!grouped.has(row.keyword)) {
+      grouped.set(row.keyword, []);
+    }
 
-  for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
-    const yyyy = d.getFullYear();
-    const mm = String(d.getMonth() + 1).padStart(2, "0");
-    const dd = String(d.getDate()).padStart(2, "0");
-    const date = `${yyyy}-${mm}-${dd}`;
+    grouped.get(row.keyword).push(row);
+  });
 
-    const item = dataMap.get(date);
-
-    result.push({
-      date,
-      value: Number(item?.value || 0),
-      lastYear: Number(item?.lastYearValue || 0),
-    });
-  }
-
-  return result;
-}
-
-export function makeTop20(rawData) {
-  const grouped = groupBy(rawData, (item) => item.keyword);
-
-  return Object.entries(grouped)
+  return Array.from(grouped.entries())
     .map(([keyword, rows]) => {
-      const latest = rows[rows.length - 1];
+      const selectedRows = getRecentRows(rows, selectedDays);
+      const rows7 = getRecentRows(rows, 7);
+      const rows14 = getRecentRows(rows, 14);
+      const rows21 = getRecentRows(rows, 21);
+
+      const avgSensitivity = average(selectedRows);
+
+      const slopeScore =
+        slope(rows7) * 0.5 +
+        slope(rows14) * 0.3 +
+        slope(rows21) * 0.2;
+
+      const score = avgSensitivity * 0.7 + slopeScore * 0.3;
+      const latest = getRecentRows(rows, 1)[0];
 
       return {
         keyword,
-        category: latest.category,
-        sensitivity: average(rows.map((item) => item.value)),
-        change: average(rows.map((item) => item.change || 0)),
+        category: latest?.category || "-",
+        parentCategory: latest?.parentCategory || "-",
+        avgSensitivity: round(avgSensitivity),
+        slopeScore: round(slopeScore),
+        score: round(score),
       };
     })
-    .sort((a, b) => b.sensitivity - a.sensitivity)
+    .sort((a, b) => b.score - a.score)
     .slice(0, 20)
     .map((item, index) => ({
-      rank: index + 1,
       ...item,
+      rank: index + 1,
     }));
 }
 
 export function makeTrendMap(rawData, year) {
-  const grouped = groupBy(rawData, (item) => item.keyword);
+  const grouped = new Map();
 
-  return Object.entries(grouped).reduce((acc, [keyword, rows]) => {
-    acc[keyword] = {
-      monthly: makeMonthlyTrend(rows, year),
-      weekly: makeWeeklyTrend(rows, year),
-      yearCompare: makeYearCompare(rows, year),
+  rawData.forEach((row) => {
+    if (!grouped.has(row.keyword)) {
+      grouped.set(row.keyword, []);
+    }
+
+    grouped.get(row.keyword).push({
+      ...row,
+      value: toNumber(row.value),
+      lastYearValue: toNumber(row.lastYearValue),
+    });
+  });
+
+  const result = {};
+
+  grouped.forEach((rows, keyword) => {
+    const sorted = [...rows].sort((a, b) =>
+      String(a.date).localeCompare(String(b.date))
+    );
+
+    result[keyword] = {
+      monthly: groupAverage(sorted, getMonthLabel),
+      weekly: groupAverage(sorted, getWeekLabel),
+      yearCompare: sorted.map((row) => ({
+        date: row.date,
+        value: round(row.value),
+        lastYear: round(row.lastYearValue),
+        year,
+      })),
     };
+  });
 
-    return acc;
-  }, {});
+  return result;
 }

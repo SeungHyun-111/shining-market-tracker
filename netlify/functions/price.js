@@ -170,8 +170,27 @@ async function fetchShopping(keyword) {
 }
 
 export async function handler(event) {
-  const keyword = event.queryStringParameters?.keyword || "복숭아";
+  const keyword = event.queryStringParameters?.keyword || "";
 
+  if (!keyword) {
+    return {
+      statusCode: 200,
+      headers: {
+        "Content-Type": "application/json; charset=utf-8",
+      },
+      body: JSON.stringify({
+        ok: false,
+        keyword: "",
+        items: [],
+        summary: {
+          minPrice: 0,
+          maxPrice: 0,
+          avgPrice: 0,
+          count: 0,
+        },
+      }),
+    };
+  }
   try {
     const data = await fetchShopping(keyword);
 

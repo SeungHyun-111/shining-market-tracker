@@ -5,7 +5,7 @@ import { fetchPriceData } from "../api/priceApi";
 export function useTrendStore() {
   const [period, setPeriod] = useState("7");
   const [category, setCategory] = useState("all");
-  const [selectedKeyword, setSelectedKeyword] = useState("복숭아");
+  const [selectedKeyword, setSelectedKeyword] = useState("");
 
   const [top20Data, setTop20Data] = useState([]);
   const [trendMap, setTrendMap] = useState({});
@@ -33,29 +33,46 @@ export function useTrendStore() {
         const data = await fetchTrendData({
           year,
           category,
+          period,
         });
 
-        setTop20Data(data.top20Data || []);
-        setTrendMap(data.trendMap || {});
+        const nextTop20 = data.top20Data || [];
+        const nextTrendMap = data.trendMap || {};
 
-        const firstKeyword = data.top20Data?.[0]?.keyword;
-        if (firstKeyword && !data.trendMap?.[selectedKeyword]) {
-          setSelectedKeyword(firstKeyword);
-        }
+        setTop20Data(nextTop20);
+        setTrendMap(nextTrendMap);
+
+        const firstKeyword = nextTop20[0]?.keyword || "";
+        setSelectedKeyword((prev) => {
+          if (prev && nextTrendMap[prev]) return prev;
+          return firstKeyword;
+        });
       } catch (e) {
         setError(e.message);
         setTop20Data([]);
         setTrendMap({});
+        setSelectedKeyword("");
       } finally {
         setLoading(false);
       }
     }
 
     loadTrend();
-  }, [category]);
+  }, [category, period]);
 
   useEffect(() => {
     async function loadPrice() {
+      if (!selectedKeyword) {
+        setPriceItems([]);
+        setPriceSummary({
+          minPrice: 0,
+          maxPrice: 0,
+          avgPrice: 0,
+          count: 0,
+        });
+        return;
+      }
+
       try {
         setPriceLoading(true);
         setPriceError(null);
@@ -85,9 +102,7 @@ export function useTrendStore() {
       }
     }
 
-    if (selectedKeyword) {
-      loadPrice();
-    }
+    loadPrice();
   }, [selectedKeyword]);
 
   const filteredTop20 = useMemo(() => {
@@ -95,11 +110,17 @@ export function useTrendStore() {
     return top20Data.filter((item) => item.category === category);
   }, [top20Data, category]);
 
-  const trendData = trendMap[selectedKeyword] || {
-    monthly: [],
-    weekly: [],
-    yearCompare: [],
-  };
+  const trendData = selectedKeyword
+    ? trendMap[selectedKeyword] || {
+        monthly: [],
+        weekly: [],
+        yearCompare: [],
+      }
+    : {
+        monthly: [],
+        weekly: [],
+        yearCompare: [],
+      };
 
   return {
     period,

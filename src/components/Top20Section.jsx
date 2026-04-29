@@ -11,10 +11,15 @@ export default function Top20Section({
   return (
     <section className="section-card">
       <div className="section-head">
-        <h2>최근 민감도 TOP20</h2>
+        <div>
+          <h2>민감도 TOP20</h2>
+          <p className="section-desc">
+            선택 기간 평균 민감도와 최근 기울기를 반영한 순위입니다.
+          </p>
+        </div>
 
         <div className="period-buttons">
-          {["7", "14", "30", "90"].map((p) => (
+          {["7", "14", "21", "30", "90"].map((p) => (
             <button
               key={p}
               className={period === p ? "active" : ""}
@@ -40,10 +45,11 @@ function Table({ data, selectedKeyword, onSelect }) {
       <thead>
         <tr>
           <th>순위</th>
-          <th>아이템</th>
+          <th>소분류</th>
           <th>카테고리</th>
-          <th>민감도</th>
-          <th>변동</th>
+          <th>평균</th>
+          <th>기울기</th>
+          <th>점수</th>
         </tr>
       </thead>
 
@@ -57,10 +63,13 @@ function Table({ data, selectedKeyword, onSelect }) {
             <td>{item.rank}</td>
             <td>{item.keyword}</td>
             <td>{item.category}</td>
-            <td>{item.sensitivity}</td>
-            <td className={item.change >= 0 ? "up" : "down"}>
-              {item.change > 0 ? "+" : ""}
-              {item.change}%
+            <td>{item.avgSensitivity}</td>
+            <td className={item.slopeScore >= 0 ? "up" : "down"}>
+              {item.slopeScore > 0 ? "+" : ""}
+              {item.slopeScore}
+            </td>
+            <td>
+              <b>{item.score}</b>
             </td>
           </tr>
         ))}

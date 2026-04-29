@@ -1,10 +1,18 @@
 import { makeTop20, makeTrendMap } from "../../src/utils/trendTransform.js";
+import { FOOD_KEYWORDS } from "../../src/constants/foodKeywords.js";
+
+const MAX_TREND_KEYWORDS = 50;
+
+function json(statusCode, body) {
+  return {
+    statusCode,
+    headers: { "Content-Type": "application/json; charset=utf-8" },
+    body: JSON.stringify(body),
+  };
+}
 
 function formatDate(date) {
-  const yyyy = date.getFullYear();
-  const mm = String(date.getMonth() + 1).padStart(2, "0");
-  const dd = String(date.getDate()).padStart(2, "0");
-  return `${yyyy}-${mm}-${dd}`;
+  return date.toISOString().slice(0, 10);
 }
 
 function getDateRange(year) {
@@ -17,106 +25,144 @@ function getDateRange(year) {
   };
 }
 
-async function fetchNaverTrend(keywords, year) {
-  const { startDate, endDate } = getDateRange(year);
-
-  const res = await fetch("https://openapi.naver.com/v1/datalab/search", {
-    method: "POST",
-    headers: {
-      "X-Naver-Client-Id": process.env.NAVER_CLIENT_ID,
-      "X-Naver-Client-Secret": process.env.NAVER_CLIENT_SECRET,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      startDate,
-      endDate,
-      timeUnit: "date",
-      keywordGroups: keywords.map((k) => ({
-        groupName: k,
-        keywords: [k],
-      })),
-    }),
-  });
-
-  if (!res.ok) {
-    const errorText = await res.text();
-    throw new Error(`NAVER TREND API 실패 ${res.status}: ${errorText}`);
+function chunk(array, size) {
+  const result = [];
+  for (let i = 0; i < array.length; i += size) {
+    result.push(array.slice(i, i + size));
   }
-
-  return res.json();
+  return result;
 }
 
-function convertToRaw(naverData, year) {
-  const result = [];
+function makeKeywordPool() {
+  const keywordPool = Object.entries(FOOD_KEYWORDS).flatMap(([category, keywords]) =>
+    keywords.map((keyword) => ({
+      keyword,
+      category,
+    }))
+  );
 
-  naverData.results.forEach((group) => {
-    const currentMap = new Map();
-    const lastYearMap = new Map();
+  const category3Pool = Object.keys(FOOD_KEYWORDS).map((category) => ({
+    keyword: category,
+    category,
+  }));
 
-    group.data.forEach((row) => {
-      const d = new Date(`${row.period}T00:00:00`);
-      const key = row.period.slice(5);
-      const value = Number(row.ratio || 0);
+  return { category3Pool, keywordPool };
+}
 
-      if (d.getFullYear() === year) {
-        currentMap.set(key, value);
-      }
+async function fetchNaverTrend(keywordItems, year) {
+  if (!keywordItems.length) {
+    return { results: [] };
+  }
 
-      if (d.getFullYear() === year - 1) {
-        lastYearMap.set(key, value);
-      }
+  const { startDate, endDate } = getDateRange(year);
+  const results = [];
+
+  for (const batch of chunk(keywordItems, 5)) {
+    const res = await fetch("https://openapi.naver.com/v1/datalab/search", {
+      method: "POST",
+      headers: {
+        "X-Naver-Client-Id": process.env.NAVER_CLIENT_ID,
+        "X-Naver-Client-Secret": process.env.NAVER_CLIENT_SECRET,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        startDate,
+        endDate,
+        timeUnit: "date",
+        keywordGroups: batch.map((item) => ({
+          groupName: item.keyword,
+          keywords: [item.keyword],
+        })),
+      }),
     });
 
-    const allKeys = new Set([...currentMap.keys(), ...lastYearMap.keys()]);
+    if (!res.ok) {
+      throw new Error(`NAVER DATALAB API 실패 ${res.status}: ${await res.text()}`);
+    }
 
-    allKeys.forEach((key) => {
-      const value = currentMap.get(key) || 0;
-      const lastYearValue = lastYearMap.get(key) || 0;
+    const data = await res.json();
+    results.push(...(data.results || []));
+  }
+
+  return { results };
+}
+
+function convertToRaw(naverData, keywordItems, year) {
+  const categoryMap = new Map(keywordItems.map((item) => [item.keyword, item.category]));
+  const result = [];
+
+  (naverData.results || []).forEach((group) => {
+    (group.data || []).forEach((row) => {
+      const d = new Date(`${row.period}T00:00:00`);
+
+      if (d.getFullYear() !== year) return;
 
       result.push({
         keyword: group.title,
-        category: "과일",
-        date: `${year}-${key}`,
-        value,
-        lastYearValue,
-        change:
-          lastYearValue === 0
-            ? 0
-            : ((value - lastYearValue) / lastYearValue) * 100,
+        category: categoryMap.get(group.title) || "-",
+        date: row.period,
+        value: Number(row.ratio || 0),
+        lastYearValue: 0,
       });
     });
   });
 
-  return result.sort((a, b) => a.date.localeCompare(b.date));
+  return result;
 }
 
 export async function handler(event) {
-  const today = new Date();
-  const year = Number(event.queryStringParameters?.year || today.getFullYear());
-
-  let rawData = [];
-  let source = "naver";
-  let errorMessage = null;
+  const year = Number(event.queryStringParameters?.year || new Date().getFullYear());
+  const category = event.queryStringParameters?.category || "all";
+  const period = event.queryStringParameters?.period || "7";
+  const debug = event.queryStringParameters?.debug;
 
   try {
-    const keywords = ["복숭아", "사과", "수박"];
-    const naverData = await fetchNaverTrend(keywords, year);
-    rawData = convertToRaw(naverData, year);
-  } catch (e) {
-    source = "error";
-    errorMessage = e.message;
-  }
+    const { category3Pool, keywordPool } = makeKeywordPool();
 
-  return {
-    statusCode: 200,
-    headers: { "Content-Type": "application/json; charset=utf-8" },
-    body: JSON.stringify({
-      ok: !errorMessage,
-      source,
+    if (debug === "pool") {
+      return json(200, {
+        count: category3Pool.length,
+        keywordPool: category3Pool,
+      });
+    }
+
+    if (debug === "items") {
+      return json(200, {
+        count: keywordPool.length,
+        keywordPool,
+      });
+    }
+
+    const filtered =
+      category === "all"
+        ? keywordPool
+        : keywordPool.filter((item) => item.category === category);
+
+    const trendTargets = filtered.slice(0, MAX_TREND_KEYWORDS);
+
+    const naverData = await fetchNaverTrend(trendTargets, year);
+    const rawData = convertToRaw(naverData, trendTargets, year);
+
+    return json(200, {
+      ok: true,
       year,
-      errorMessage,
-      top20Data: makeTop20(rawData),
+      category,
+      period,
+      totalKeywordCount: keywordPool.length,
+      filteredKeywordCount: filtered.length,
+      trendTargetCount: trendTargets.length,
+      category3Pool,
+      keywordPool: trendTargets,
+      top20Data: makeTop20(rawData, period),
       trendMap: makeTrendMap(rawData, year),
-    }),
-  };
+    });
+  } catch (error) {
+    return json(200, {
+      ok: false,
+      errorMessage: error.message,
+      keywordPool: [],
+      top20Data: [],
+      trendMap: {},
+    });
+  }
 }
