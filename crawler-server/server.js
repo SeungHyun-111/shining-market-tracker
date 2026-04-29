@@ -13,7 +13,6 @@ app.get("/api/price", async (req, res) => {
   try {
     browser = await chromium.launch({
       args: ["--no-sandbox"],
-      executablePath: "/opt/render/.cache/ms-playwright/chromium/chrome-linux/chrome", // 🔥 핵심
     });
 
     const page = await browser.newPage();
