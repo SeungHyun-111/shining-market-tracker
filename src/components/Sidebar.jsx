@@ -1,10 +1,5 @@
 const menus = [
-  "대시보드",
-  "아이템 비교",
-  "키워드 관리",
-  "가격 모니터링",
-  "알림 설정",
-  "데이터 안내",
+  "대시보드"
 ];
 
 export default function Sidebar() {

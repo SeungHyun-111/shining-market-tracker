@@ -1,18 +1,18 @@
+import { useEffect, useRef, useState } from "react";
 import {
   LineChart,
   Line,
   XAxis,
   YAxis,
   Tooltip,
-  ResponsiveContainer,
   CartesianGrid,
   Legend,
 } from "recharts";
 
 export default function TrendSection({
   selectedKeyword,
-  monthlyData,
-  weeklyData,
+  monthlyData = [],
+  weeklyData = [],
 }) {
   return (
     <section className="trend-section">
@@ -25,37 +25,78 @@ export default function TrendSection({
         <ChartCard
           title={`월별 민감도 추이 (${selectedKeyword})`}
           data={monthlyData}
+          type="monthly"
         />
 
         <ChartCard
           title={`주차별 민감도 추이 (${selectedKeyword})`}
           data={weeklyData}
+          type="weekly"
+          scroll
         />
       </div>
     </section>
   );
 }
 
-function ChartCard({ title, data }) {
+function ChartCard({ title, data = [], type, scroll = false }) {
+  const boxRef = useRef(null);
+  const [boxWidth, setBoxWidth] = useState(520);
+
+  const isWeekly = type === "weekly";
+  const chartHeight = 300;
+
+  useEffect(() => {
+    if (!boxRef.current) return;
+
+    const updateWidth = () => {
+      const width = boxRef.current?.clientWidth || 520;
+      setBoxWidth(width);
+    };
+
+    updateWidth();
+
+    const observer = new ResizeObserver(updateWidth);
+    observer.observe(boxRef.current);
+
+    return () => observer.disconnect();
+  }, []);
+
+  const chartWidth = scroll
+    ? Math.max(1200, data.length * 40, boxWidth)
+    : Math.max(320, boxWidth);
+
   return (
-    <div className="section-card chart-card">
+    <div className="section-card chart-card" ref={boxRef}>
       <h3>{title}</h3>
 
-      <ResponsiveContainer width="100%" height={260}>
-        <LineChart data={data}>
-          <CartesianGrid strokeDasharray="3 3" />
+      <div className={scroll ? "chart-scroll" : "chart-static"}>
+        <LineChart
+          width={chartWidth}
+          height={chartHeight}
+          data={data}
+          margin={{
+            top: 10,
+            right: 24,
+            left: 0,
+            bottom: isWeekly ? 62 : 20,
+          }}
+        >
+          <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
 
           <XAxis
             dataKey="label"
             interval={0}
-            minTickGap={8}
+            angle={isWeekly ? -90 : 0}
+            textAnchor={isWeekly ? "end" : "middle"}
+            height={isWeekly ? 82 : 36}
+            tick={{ fontSize: 12, fill: "#64748b" }}
           />
 
-          <YAxis />
+          <YAxis tick={{ fontSize: 12, fill: "#64748b" }} />
 
           <Tooltip />
-
-          <Legend />
+          <Legend verticalAlign="bottom" height={28} />
 
           <Line
             type="monotone"
@@ -76,7 +117,7 @@ function ChartCard({ title, data }) {
             dot={false}
           />
         </LineChart>
-      </ResponsiveContainer>
+      </div>
     </div>
   );
 }

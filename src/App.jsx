@@ -1,3 +1,5 @@
+import "./App.css";
+
 import DashboardLayout from "./layouts/DashboardLayout";
 import HeaderBar from "./components/HeaderBar";
 import Top20Section from "./components/Top20Section";
@@ -5,7 +7,6 @@ import TrendSection from "./components/TrendSection";
 import YearCompareSection from "./components/YearCompareSection";
 import PriceSection from "./components/PriceSection";
 import { useTrendStore } from "./store/useTrendStore";
-
 function App() {
   const {
     period,
@@ -17,7 +18,10 @@ function App() {
     filteredTop20,
     trendData,
     priceItems,
+    priceSummary,
     loading,
+    priceLoading,
+    priceError,
   } = useTrendStore();
 
   return (

@@ -15,7 +15,7 @@ function parseDate(value) {
   return new Date(y, m - 1, d);
 }
 
-function formatDate(value, mode) {
+function formatDate(value, mode = "day") {
   const d = parseDate(value);
 
   if (mode === "month") return `${d.getMonth() + 1}월`;
@@ -29,14 +29,17 @@ function formatDate(value, mode) {
 }
 
 function average(data, key) {
-  if (!data.length) return 0;
-  return data.reduce((sum, row) => sum + Number(row[key] || 0), 0) / data.length;
+  const valid = data.filter((row) => Number(row[key] || 0) > 0);
+  if (!valid.length) return 0;
+
+  return valid.reduce((sum, row) => sum + Number(row[key] || 0), 0) / valid.length;
 }
 
 function findPeak(data, key) {
-  if (!data.length) return "-";
+  const valid = data.filter((row) => Number(row[key] || 0) > 0);
+  if (!valid.length) return "-";
 
-  const peak = data.reduce((max, row) =>
+  const peak = valid.reduce((max, row) =>
     Number(row[key] || 0) > Number(max[key] || 0) ? row : max
   );
 
@@ -86,7 +89,7 @@ function makeTicks(data, mode) {
   return data.map((row) => row.date);
 }
 
-export default function YearCompareSection({ selectedKeyword, data }) {
+export default function YearCompareSection({ selectedKeyword, data = [] }) {
   const wheelAreaRef = useRef(null);
 
   const [zoomMode, setZoomMode] = useState("month");
@@ -102,9 +105,7 @@ export default function YearCompareSection({ selectedKeyword, data }) {
   }, [data]);
 
   const visibleData = useMemo(() => {
-    if (zoomMode === "month") {
-      return chartData;
-    }
+    if (zoomMode === "month") return chartData;
 
     if (zoomMode === "week") {
       const monthKey = focusMonth || getMonthKey(hoverDate || chartData[0]?.date);
@@ -179,27 +180,32 @@ export default function YearCompareSection({ selectedKeyword, data }) {
       <div className="section-card large-chart">
         <div className="section-head">
           <h3>전년 동일 대비 비교 ({selectedKeyword})</h3>
+          <span className="sub-text">휠 아래: 확대 / 휠 위: 축소</span>
         </div>
 
         <div ref={wheelAreaRef} className="chart-wheel-area">
           <ResponsiveContainer width="100%" height={320}>
             <LineChart
               data={visibleData}
+              margin={{ top: 10, right: 20, left: 0, bottom: 20 }}
               onMouseMove={(e) => {
                 if (e?.activeLabel) setHoverDate(e.activeLabel);
               }}
             >
-              <CartesianGrid strokeDasharray="3 3" />
+              <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
 
               <XAxis
                 dataKey="date"
                 ticks={ticks}
                 tickFormatter={(value) => formatDate(value, zoomMode)}
                 minTickGap={20}
+                tick={{ fontSize: 12, fill: "#64748b" }}
               />
 
-              <YAxis />
+              <YAxis tick={{ fontSize: 12, fill: "#64748b" }} />
+
               <Tooltip labelFormatter={(value) => formatDate(value, "day")} />
+
               <Legend />
 
               <Line
@@ -225,25 +231,30 @@ export default function YearCompareSection({ selectedKeyword, data }) {
         </div>
 
         <div className="kpi-grid">
-          <div>
+          <div className="kpi-card">
             <span>올해 평균</span>
-            <strong>{currentAvg.toFixed(2)}%</strong>
+            <strong className="this-year">{currentAvg.toFixed(2)}%</strong>
           </div>
-          <div>
+
+          <div className="kpi-card">
             <span>작년 평균</span>
-            <strong>{lastYearAvg.toFixed(2)}%</strong>
+            <strong className="last-year">{lastYearAvg.toFixed(2)}%</strong>
           </div>
-          <div>
+
+          <div className="kpi-card">
             <span>전년 대비</span>
             <strong className={growthRate >= 0 ? "up" : "down"}>
               {growthRate >= 0 ? "+" : ""}
               {growthRate.toFixed(1)}%
             </strong>
           </div>
-          <div>
+
+          <div className="kpi-card peak-card">
             <span>피크 비교</span>
             <strong>
-              {currentPeak} / {lastYearPeak}
+              <em className="last-year">{lastYearPeak}</em>
+              <i>→</i>
+              <em className="this-year">{currentPeak}</em>
             </strong>
           </div>
         </div>
@@ -268,11 +279,11 @@ export default function YearCompareSection({ selectedKeyword, data }) {
           </div>
           <div>
             <dt>올해 평균 민감도</dt>
-            <dd>{currentAvg.toFixed(2)}%</dd>
+            <dd className="this-year">{currentAvg.toFixed(2)}%</dd>
           </div>
           <div>
             <dt>작년 평균 민감도</dt>
-            <dd>{lastYearAvg.toFixed(2)}%</dd>
+            <dd className="last-year">{lastYearAvg.toFixed(2)}%</dd>
           </div>
           <div>
             <dt>전년 대비</dt>
@@ -282,12 +293,12 @@ export default function YearCompareSection({ selectedKeyword, data }) {
             </dd>
           </div>
           <div>
-            <dt>올해 피크</dt>
-            <dd>{currentPeak}</dd>
+            <dt>작년 피크</dt>
+            <dd className="last-year">{lastYearPeak}</dd>
           </div>
           <div>
-            <dt>작년 피크</dt>
-            <dd>{lastYearPeak}</dd>
+            <dt>올해 피크</dt>
+            <dd className="this-year">{currentPeak}</dd>
           </div>
         </dl>
 

@@ -1,7 +1,4 @@
-import {
-  makeTop20,
-  makeTrendMap,
-} from "../../src/utils/trendTransform.js";
+import { makeTop20, makeTrendMap } from "../../src/utils/trendTransform.js";
 
 function formatDate(date) {
   const yyyy = date.getFullYear();
@@ -14,37 +11,31 @@ function getDateRange(year) {
   const today = new Date();
   const currentYear = today.getFullYear();
 
-  const startDate = `${year - 1}-01-01`;
-  const endDate =
-    year === currentYear
-      ? formatDate(today)
-      : `${year}-12-31`;
-
-  return { startDate, endDate };
+  return {
+    startDate: `${year - 1}-01-01`,
+    endDate: year === currentYear ? formatDate(today) : `${year}-12-31`,
+  };
 }
 
 async function fetchNaverTrend(keywords, year) {
-  const url = "https://openapi.naver.com/v1/datalab/search";
   const { startDate, endDate } = getDateRange(year);
 
-  const body = {
-    startDate,
-    endDate,
-    timeUnit: "date",
-    keywordGroups: keywords.map((k) => ({
-      groupName: k,
-      keywords: [k],
-    })),
-  };
-
-  const res = await fetch(url, {
+  const res = await fetch("https://openapi.naver.com/v1/datalab/search", {
     method: "POST",
     headers: {
       "X-Naver-Client-Id": process.env.NAVER_CLIENT_ID,
       "X-Naver-Client-Secret": process.env.NAVER_CLIENT_SECRET,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify(body),
+    body: JSON.stringify({
+      startDate,
+      endDate,
+      timeUnit: "date",
+      keywordGroups: keywords.map((k) => ({
+        groupName: k,
+        keywords: [k],
+      })),
+    }),
   });
 
   if (!res.ok) {
@@ -59,34 +50,44 @@ function convertToRaw(naverData, year) {
   const result = [];
 
   naverData.results.forEach((group) => {
+    const currentMap = new Map();
     const lastYearMap = new Map();
 
     group.data.forEach((row) => {
       const d = new Date(`${row.period}T00:00:00`);
+      const key = row.period.slice(5);
+      const value = Number(row.ratio || 0);
+
+      if (d.getFullYear() === year) {
+        currentMap.set(key, value);
+      }
+
       if (d.getFullYear() === year - 1) {
-        const key = row.period.slice(5);
-        lastYearMap.set(key, Number(row.ratio || 0));
+        lastYearMap.set(key, value);
       }
     });
 
-    group.data.forEach((row) => {
-      const d = new Date(`${row.period}T00:00:00`);
-      if (d.getFullYear() !== year) return;
+    const allKeys = new Set([...currentMap.keys(), ...lastYearMap.keys()]);
 
-      const key = row.period.slice(5);
+    allKeys.forEach((key) => {
+      const value = currentMap.get(key) || 0;
+      const lastYearValue = lastYearMap.get(key) || 0;
 
       result.push({
         keyword: group.title,
         category: "과일",
-        date: row.period,
-        value: Number(row.ratio || 0),
-        lastYearValue: lastYearMap.get(key) || 0,
-        change: 0,
+        date: `${year}-${key}`,
+        value,
+        lastYearValue,
+        change:
+          lastYearValue === 0
+            ? 0
+            : ((value - lastYearValue) / lastYearValue) * 100,
       });
     });
   });
 
-  return result;
+  return result.sort((a, b) => a.date.localeCompare(b.date));
 }
 
 export async function handler(event) {
@@ -106,21 +107,16 @@ export async function handler(event) {
     errorMessage = e.message;
   }
 
-  const top20Data = makeTop20(rawData);
-  const trendMap = makeTrendMap(rawData, year);
-
   return {
     statusCode: 200,
-    headers: {
-      "Content-Type": "application/json; charset=utf-8",
-    },
+    headers: { "Content-Type": "application/json; charset=utf-8" },
     body: JSON.stringify({
       ok: !errorMessage,
       source,
       year,
       errorMessage,
-      top20Data,
-      trendMap,
+      top20Data: makeTop20(rawData),
+      trendMap: makeTrendMap(rawData, year),
     }),
   };
 }
