@@ -1,6 +1,6 @@
 import express from "express";
 import cors from "cors";
-import puppeteer from "puppeteer";
+import puppeteer from "puppeteer-core";
 
 const app = express();
 app.use(cors());
@@ -24,14 +24,15 @@ app.get("/api/price", async (req, res) => {
   let browser;
 
   try {
-    browser = await puppeteer.launch({
-      headless: "new",
-      args: [
-        "--no-sandbox",
-        "--disable-setuid-sandbox",
-        "--disable-dev-shm-usage",
-        "--disable-gpu",
-      ],
+            browser = await puppeteer.launch({
+        executablePath: "/usr/bin/chromium",
+        headless: "new",
+        args: [
+            "--no-sandbox",
+            "--disable-setuid-sandbox",
+            "--disable-dev-shm-usage",
+            "--disable-gpu",
+        ],
     });
 
     const page = await browser.newPage();

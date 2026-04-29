@@ -4,12 +4,11 @@
   "type": "module",
   "main": "server.js",
   "scripts": {
-    "postinstall": "npx puppeteer browsers install chrome",
     "start": "node server.js"
   },
   "dependencies": {
     "cors": "^2.8.6",
     "express": "^5.2.1",
-    "puppeteer": "^24.32.0"
+    "puppeteer-core": "^24.32.0"
   }
 }
